@@ -188,15 +188,18 @@ function AmountPad({ value, onChange }: { value: number; onChange: (v: number) =
           초기화
         </button>
       </div>
-      <input type="hidden" name="amount" value={value} />
-      <p
-        aria-live="polite"
-        className={`rounded-xl border border-slate-300 px-4 py-3 text-right text-2xl font-bold tabular-nums ${
-          value === 0 ? "text-slate-300" : "text-slate-900"
-        }`}
-      >
-        {value.toLocaleString("ko-KR")}원
-      </p>
+      {/* 직접 입력과 버튼 조작 모두 가능 */}
+      <div className="flex items-center rounded-xl border border-slate-300 px-4 py-3 focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-200">
+        <input
+          name="amount"
+          inputMode="numeric"
+          placeholder="0"
+          value={value === 0 ? "" : value.toLocaleString("ko-KR")}
+          onChange={(e) => onChange(Number(e.target.value.replace(/[^\d]/g, "").slice(0, 12)) || 0)}
+          className="w-full bg-transparent text-right text-2xl font-bold tabular-nums outline-none placeholder:text-slate-300"
+        />
+        <span className={`ml-1 text-2xl font-bold ${value === 0 ? "text-slate-300" : "text-slate-500"}`}>원</span>
+      </div>
       <div className="mt-2 grid grid-cols-3 gap-2">
         {STEPS.map((s) => (
           <button
