@@ -13,6 +13,7 @@ import {
 } from "@/lib/db";
 import { parseCategory, won } from "@/lib/format";
 import { MEMBERS } from "@/lib/members";
+import { currentTripDay } from "@/lib/trip";
 import AddExpenseForm from "./add-expense-form";
 import DeleteButton from "./delete-button";
 import Header from "./header";
@@ -134,7 +135,12 @@ export default async function Home({ searchParams }: PageProps<"/">) {
         ))}
       </section>
 
-      <AddExpenseForm key={cat ?? "all"} defaultDay={day ?? (cat === "fixed" ? ETC_DAY : undefined)} me={session.name} />
+      {/* 일차를 고르지 않았으면 오늘 날짜에 해당하는 일차를 기본값으로 */}
+      <AddExpenseForm
+        key={cat ?? "all"}
+        defaultDay={day ?? (cat === "fixed" ? ETC_DAY : currentTripDay())}
+        me={session.name}
+      />
     </main>
   );
 }
