@@ -1,26 +1,53 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { DEFAULT_PAYER, MEMBERS, type Member } from "@/lib/members";
-import { addExpense, type AddState } from "./actions";
 
 export default function AddExpenseForm({ defaultDay, me }: { defaultDay?: number; me: Member }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState<"fixed" | "local">(defaultDay === 0 ? "fixed" : "local");
   const [amount, setAmount] = useState(0);
   const [payer, setPayer] = useState<Member>(DEFAULT_PAYER);
   const [users, setUsers] = useState<Member[]>([...MEMBERS]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [needLogin, setNeedLogin] = useState(false);
 
-  const [state, action, pending] = useActionState(async (prev: AddState, formData: FormData) => {
-    const result = await addExpense(prev, formData);
-    if (result.ok) {
+  /**
+   * 서버 액션 대신 고정 주소의 API 로 저장한다.
+   * 실패해도 입력한 내용은 그대로 두고 폼 안에 이유를 보여준다.
+   */
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    setError(null);
+    setNeedLogin(false);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/expenses", { method: "POST", body: formData });
+      if (res.status === 401) {
+        setNeedLogin(true);
+        setError("로그인이 풀렸어요. 다시 로그인한 뒤 저장해주세요.");
+        return;
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "저장하지 못했어요. 잠시 후 다시 시도해주세요.");
+        return;
+      }
       setAmount(0);
       setPayer(DEFAULT_PAYER);
       setUsers([...MEMBERS]);
       setOpen(false);
+      router.refresh();
+    } catch {
+      setError("네트워크 연결을 확인하고 다시 시도해주세요.");
+    } finally {
+      setSaving(false);
     }
-    return result;
-  }, {});
+  }
 
   if (!open) {
     return (
@@ -39,7 +66,7 @@ export default function AddExpenseForm({ defaultDay, me }: { defaultDay?: number
       onClick={() => setOpen(false)}
     >
       <form
-        action={action}
+        onSubmit={onSubmit}
         onClick={(e) => e.stopPropagation()}
         className="max-h-[90dvh] w-full max-w-md space-y-4 overflow-y-auto rounded-t-2xl bg-white p-5 sm:rounded-2xl"
       >
@@ -109,72 +136,36 @@ export default function AddExpenseForm({ defaultDay, me }: { defaultDay?: number
             ))}
           </div>
         </Field>
+
         <MemberPicker label="이용자" name="users" selected={users} onChange={setUsers} />
 
         <p className="text-xs text-slate-400">작성자: {me}</p>
 
-        {state.error && <p className="text-sm text-red-600">{state.error}</p>}
+        {error && (
+          <div className="rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-600">
+            <p>{error}</p>
+            {needLogin && (
+              <a href="/login" className="mt-1 inline-block font-semibold underline">
+                로그인 화면으로 가기
+              </a>
+            )}
+          </div>
+        )}
 
         <button
-          disabled={pending}
+          disabled={saving}
           className="w-full rounded-xl bg-orange-500 py-3 font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60"
         >
-          {pending ? "저장 중..." : "저장"}
+          {saving ? "저장 중..." : "저장"}
         </button>
       </form>
     </div>
   );
 }
 
-function MemberPicker({
-  label,
-  name,
-  selected,
-  onChange,
-}: {
-  label: string;
-  name: string;
-  selected: Member[];
-  onChange: (v: Member[]) => void;
-}) {
-  const allSelected = selected.length === MEMBERS.length;
-  const toggle = (m: Member) =>
-    onChange(selected.includes(m) ? selected.filter((x) => x !== m) : MEMBERS.filter((x) => x === m || selected.includes(x)));
-
-  return (
-    <div>
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-sm font-medium text-slate-600">
-          {label} <span className="text-slate-400">({selected.length}명)</span>
-        </span>
-        <button
-          type="button"
-          onClick={() => onChange(allSelected ? [] : [...MEMBERS])}
-          className="text-xs font-medium text-orange-600 hover:underline"
-        >
-          {allSelected ? "전체 해제" : "전체 선택"}
-        </button>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {MEMBERS.map((m) => (
-          <Choice
-            key={m}
-            type="checkbox"
-            name={name}
-            value={m}
-            label={m}
-            checked={selected.includes(m)}
-            onChange={() => toggle(m)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 const STEPS = [100, 1000, 10000];
 
-/** 수기 입력 대신 ±버튼으로 가격 조절 (0원 미만으로는 내려가지 않음) */
+/** 직접 입력과 ± 버튼 조작 모두 가능 (0원 미만으로는 내려가지 않음) */
 function AmountPad({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
     <div>
@@ -188,7 +179,6 @@ function AmountPad({ value, onChange }: { value: number; onChange: (v: number) =
           초기화
         </button>
       </div>
-      {/* 직접 입력과 버튼 조작 모두 가능 */}
       <div className="flex items-center rounded-xl border border-slate-300 px-4 py-3 focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-200">
         <input
           name="amount"
@@ -221,6 +211,54 @@ function AmountPad({ value, onChange }: { value: number; onChange: (v: number) =
           >
             −{s.toLocaleString("ko-KR")}
           </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MemberPicker({
+  label,
+  name,
+  selected,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  selected: Member[];
+  onChange: (v: Member[]) => void;
+}) {
+  const allSelected = selected.length === MEMBERS.length;
+  const toggle = (m: Member) =>
+    onChange(
+      selected.includes(m) ? selected.filter((x) => x !== m) : MEMBERS.filter((x) => x === m || selected.includes(x)),
+    );
+
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-sm font-medium text-slate-600">
+          {label} <span className="text-slate-400">({selected.length}명)</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange(allSelected ? [] : [...MEMBERS])}
+          className="text-xs font-medium text-orange-600 hover:underline"
+        >
+          {allSelected ? "전체 해제" : "전체 선택"}
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {MEMBERS.map((m) => (
+          <Choice
+            key={m}
+            type="checkbox"
+            name={name}
+            value={m}
+            label={m}
+            checked={selected.includes(m)}
+            onChange={() => toggle(m)}
+          />
         ))}
       </div>
     </div>
